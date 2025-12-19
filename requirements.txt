@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pandas
+numpy
+yfinance
+sqlalchemy
+pyodbc
+python-dotenv
+statsmodels
