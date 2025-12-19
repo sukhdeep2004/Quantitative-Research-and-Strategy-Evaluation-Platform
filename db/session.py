@@ -1,8 +1,14 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from config import DATABASE_URL
 
-DATABASE_URL = "mssql+pyodbc://user:password@server/db?driver=ODBC+Driver+18+for+SQL+Server"
+engine = create_engine(DATABASE_URL, echo=False)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
