@@ -7,14 +7,14 @@ from quant.backtest import backtest
 from quant.risk import sharpe_ratio, max_drawdown
 from db.models import BacktestResult
 from db.session import get_db
-from schemas import BacktestRequest
+from api.schemas import BacktestRequest
 import os
 
 router = APIRouter()
 @router.post("/run-backtest")
 def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
     try:
-        df = fetch_price_data(req["ticker"], req["start"], req["end"])
+        df = fetch_price_data(req.ticker, req.start, req.end)
         signals = df['returns'].rolling(20).mean().apply(lambda x: -1 if x > 0 else 1)
         equity, strat_returns = backtest(df['returns'], signals)
 
@@ -33,9 +33,9 @@ def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
         win_rate = winning_trades / (total_trades*100) if total_trades > 0 else 0
 
         result={
-            "ticker": req["ticker"],
-            "start_date": req["start"],
-            "end_date": req["end"],
+            "ticker": req.ticker,
+            "start_date": req.start,
+            "end_date": req.end,
             "strategy_name": "Moving Average",
             "sharpe_ratio": float(sharpe),
             "final_equity": final_eq,
@@ -45,16 +45,20 @@ def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
             "num_trades": int(num_trades),
             "created_at": datetime.utcnow()
         }
+        BacktestResult_instance = BacktestResult(**result)
+        db.add(BacktestResult_instance)
+        db.commit()
+        db.refresh(BacktestResult_instance)
         return {
-            "id": result.id,
-            "ticker": result.ticker,
+            "id": BacktestResult_instance.id,
+            "ticker": BacktestResult_instance.ticker,
             "sharpe": float(sharpe),
             "final_equity": final_eq,
             "max_drawdown": float(max_dd),
             "total_return": float(total_ret),
             "win_rate": float(win_rate),
             "num_trades": int(num_trades),
-            "created_at": result.created_at
+            "created_at": BacktestResult_instance.created_at
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

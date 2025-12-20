@@ -1,0 +1,107 @@
+from db.session import engine, SessionLocal
+from db.models import Base, BacktestResult
+from datetime import datetime, timedelta
+import random
+
+def test_connection():
+    """Test database connection"""
+    try:
+        with engine.connect() as conn:
+            print("✓ Database connection successful!")
+            return True
+    except Exception as e:
+        print(f"✗ Database connection failed: {e}")
+        return False
+
+def create_tables():
+    """Create all tables"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✓ Tables created successfully!")
+        return True
+    except Exception as e:
+        print(f"✗ Table creation failed: {e}")
+        return False
+
+def insert_sample_data():
+    """Insert sample backtest results for testing Power BI"""
+    db = SessionLocal()
+    try:
+        tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA']
+        strategies = ['Moving Average', 'RSI', 'MACD', 'Bollinger Bands']
+        
+        print("Inserting sample data...")
+        for i in range(20):
+            result = BacktestResult(
+                ticker=random.choice(tickers),
+                start_date=(datetime.now() - timedelta(days=365)).date(),
+                end_date=(datetime.now() - timedelta(days=random.randint(1, 30))).date(),
+                strategy_name=random.choice(strategies),
+                sharpe_ratio=round(random.uniform(-0.5, 2.5), 2),
+                final_equity=round(random.uniform(0.85, 1.45), 4),
+                max_drawdown=round(random.uniform(-0.35, -0.05), 4),
+                total_return=round(random.uniform(-15, 45), 2),
+                win_rate=round(random.uniform(35, 65), 2),
+                num_trades=random.randint(10, 100),
+                created_at=datetime.now() - timedelta(days=random.randint(0, 60))
+            )
+            db.add(result)
+        
+        db.commit()
+        print(f"✓ Inserted 20 sample backtest results!")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to insert sample data: {e}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+def query_results():
+    """Query and display results"""
+    db = SessionLocal()
+    try:
+        results = db.query(BacktestResult).limit(5).all()
+        print("\nSample Results:")
+        print("-" * 80)
+        for r in results:
+            print(f"ID: {r.id} | {r.ticker} | Sharpe: {r.sharpe_ratio} | Return: {r.total_return}%")
+        print("-" * 80)
+        
+        total = db.query(BacktestResult).count()
+        print(f"\nTotal results in database: {total}")
+        return True
+    except Exception as e:
+        print(f"✗ Query failed: {e}")
+        return False
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("DATABASE SETUP AND TEST")
+    print("=" * 80)
+    
+    # Step 1: Test connection
+    print("\n1. Testing database connection...")
+    if not test_connection():
+        exit(1)
+    
+    # Step 2: Create tables
+    print("\n2. Creating tables...")
+    if not create_tables():
+        exit(1)
+    
+    # Step 3: Insert sample data
+    print("\n3. Inserting sample data...")
+    if not insert_sample_data():
+        exit(1)
+    
+    # Step 4: Query results
+    print("\n4. Querying results...")
+    if not query_results():
+        exit(1)
+    
+    print("\n" + "=" * 80)
+    print("✓ ALL TESTS PASSED!")
+    print("=" * 80)
