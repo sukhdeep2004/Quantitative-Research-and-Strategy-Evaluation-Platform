@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from quant.data import fetch_price_data
@@ -510,6 +510,21 @@ def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
     """
     
     return html_content
+@router.get("/download-powerbi")
+def download_powerbi():
+    """Download Power BI file if available"""
+    pbix_path = "Quant_Research_Dashboard.pbix"
+    if os.path.exists(pbix_path):
+        return FileResponse(
+            pbix_path, 
+            media_type="application/octet-stream",
+            filename="Quant_Research_Dashboard.pbix"
+        )
+    else:
+        raise HTTPException(
+            status_code=404, 
+            detail="Power BI file not found. Please place your .pbix file in the project root directory."
+        )
 @router.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard():
     """Serve Power BI embedded dashboard"""
