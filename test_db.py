@@ -1,5 +1,7 @@
 from db.session import engine, SessionLocal
 from db.models import Base, BacktestResult
+from quant.backtest import run_all_backtests
+from quant.risk import compute_metrics
 from datetime import datetime, timedelta
 import random
 
@@ -24,36 +26,59 @@ def create_tables():
         return False
 
 def insert_sample_data():
-    """Insert sample backtest results for testing Power BI"""
+    """Insert REAL backtest results for Power BI"""
     db = SessionLocal()
+
     try:
         tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA']
-        strategies = ['Moving Average', 'RSI', 'MACD', 'Bollinger Bands']
         
-        print("Inserting sample data...")
-        for i in range(20):
-            result = BacktestResult(
-                ticker=random.choice(tickers),
-                start_date=(datetime.now() - timedelta(days=365)).date(),
-                end_date=(datetime.now() - timedelta(days=random.randint(1, 30))).date(),
-                strategy_name=random.choice(strategies),
-                sharpe_ratio=round(random.uniform(-0.5, 2.5), 2),
-                final_equity=round(random.uniform(0.85, 1.45), 4),
-                max_drawdown=round(random.uniform(-0.35, -0.05), 4),
-                total_return=round(random.uniform(-15, 45), 2),
-                win_rate=round(random.uniform(35, 65), 2),
-                num_trades=random.randint(10, 100),
-                created_at=datetime.now() - timedelta(days=random.randint(0, 60))
-            )
-            db.add(result)
+
+        end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
+        start_date = end_date - timedelta(days=365)  # 1 year back
         
+        print(f"Running backtests from {start_date} to {end_date}")
+        print("Running real backtests and inserting data...")
+
+        for ticker in tickers:
+            print(f"Processing {ticker}...")
+            backtest_results = run_all_backtests(ticker, start_date, end_date)
+
+            for strategy_name, model in backtest_results.items():
+                equity = model['equity_curve']
+                returns = model['returns']
+
+                final_equity, total_return, win_rate, num_trades = compute_metrics(
+                    equity, returns
+                )
+
+                result = BacktestResult(
+                    ticker=ticker,
+                    start_date=start_date,
+                    end_date=end_date,
+                    strategy_name=strategy_name,
+                    sharpe_ratio=round(model['sharpe'], 3),
+                    final_equity=round(final_equity, 4),
+                    max_drawdown=round(model['max_drawdown'], 4)*100,# Store as percentage
+                    total_return=round(total_return, 2),
+                    win_rate=round(win_rate, 2),
+                    num_trades=int(num_trades),
+                    created_at=datetime.now()
+                )
+
+                db.add(result)
+
         db.commit()
-        print(f"✓ Inserted 20 sample backtest results!")
+        print("✓ Successfully inserted real backtest results!")
+
         return True
+
     except Exception as e:
-        print(f"✗ Failed to insert sample data: {e}")
         db.rollback()
+        print(f"✗ Failed to insert backtest data: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
     finally:
         db.close()
 
@@ -63,10 +88,12 @@ def query_results():
     try:
         results = db.query(BacktestResult).limit(5).all()
         print("\nSample Results:")
-        print("-" * 80)
+        print("-" * 100)
+        print(f"{'ID':<5} {'Ticker':<8} {'Strategy':<20} {'Sharpe':<8} {'Return':<10} {'MaxDD':<10}")
+        print("-" * 100)
         for r in results:
-            print(f"ID: {r.id} | {r.ticker} | Sharpe: {r.sharpe_ratio} | Return: {r.total_return}%")
-        print("-" * 80)
+            print(f"{r.id:<5} {r.ticker:<8} {r.strategy_name:<20} {r.sharpe_ratio:<8.2f} {r.total_return:<10.2f} {r.max_drawdown:<10.2%}")
+        print("-" * 100)
         
         total = db.query(BacktestResult).count()
         print(f"\nTotal results in database: {total}")
@@ -76,8 +103,9 @@ def query_results():
         return False
     finally:
         db.close()
+
 def delete_all_results():
-    """Delete all backtest results (use with caution)"""
+    """Delete all backtest results"""
     db = SessionLocal()
     try:
         deleted = db.query(BacktestResult).delete()
@@ -90,28 +118,29 @@ def delete_all_results():
         return False
     finally:
         db.close()
+
 if __name__ == "__main__":
-    delete_all_results()
     print("=" * 80)
     print("DATABASE SETUP AND TEST")
     print("=" * 80)
     
-    # Step 1: Test connection
+
+    print("\n0. Clearing old data...")
+    delete_all_results()
+    
     print("\n1. Testing database connection...")
     if not test_connection():
         exit(1)
     
-    # Step 2: Create tables
     print("\n2. Creating tables...")
     if not create_tables():
         exit(1)
     
-    # Step 3: Insert sample data
+
     print("\n3. Inserting sample data...")
     if not insert_sample_data():
         exit(1)
-    
-    # Step 4: Query results
+
     print("\n4. Querying results...")
     if not query_results():
         exit(1)

@@ -8,6 +8,7 @@ from quant.risk import sharpe_ratio, max_drawdown
 from db.models import BacktestResult
 from db.session import get_db
 from api.schemas import BacktestRequest
+from sqlalchemy import func
 import os
 
 router = APIRouter()
@@ -354,10 +355,8 @@ def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
             <h1>📊 Backtest Results</h1>
             <div class="nav-buttons">
                 <a href="/" class="btn btn-secondary">← Home</a>
-                <a href="/reports" class="btn">📈 Reports</a>
                 <a href="/docs" class="btn">📚 API Docs</a>
                 <button onclick="exportToCSV()" class="btn export-btn">📥 Export CSV</button>
-                <button onclick="exportToJSON()" class="btn export-btn">📥 Export JSON</button>
             </div>
         </div>
         
@@ -501,9 +500,6 @@ def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
                 a.click();
             }}
             
-            function exportToJSON() {{
-                window.location.href = '/backtest-results-json';
-            }}
         </script>
     </body>
     </html>
@@ -513,7 +509,7 @@ def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
 @router.get("/download-powerbi")
 def download_powerbi():
     """Download Power BI file if available"""
-    pbix_path = "Quant_Research_Dashboard.pbix"
+    pbix_path = "Quant Research Dashboard.pbix"
     if os.path.exists(pbix_path):
         return FileResponse(
             pbix_path, 
@@ -525,109 +521,195 @@ def download_powerbi():
             status_code=404, 
             detail="Power BI file not found. Please place your .pbix file in the project root directory."
         )
-@router.get("/dashboard", response_class=HTMLResponse)
-def get_dashboard():
-    """Serve Power BI embedded dashboard"""
+# @router.get("/dashboard", response_class=HTMLResponse)
+# def get_dashboard():
+#     """Serve Power BI embedded dashboard"""
 
-    report_id = os.getenv("POWERBI_REPORT_ID", "")
-    group_id = os.getenv("POWERBI_GROUP_ID", "")
-    embed_url = os.getenv("POWERBI_EMBED_URL", "")
+#     report_id = os.getenv("POWERBI_REPORT_ID", "")
+#     group_id = os.getenv("POWERBI_GROUP_ID", "")
+#     embed_url = os.getenv("POWERBI_EMBED_URL", "")
     
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Quant Research Dashboard</title>
-        <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.22.0/dist/powerbi.min.js"></script>
-        <style>
-            body {{
-                margin: 0;
-                padding: 20px;
-                font-family: Arial, sans-serif;
-                background: #f5f5f5;
-            }}
-            .header {{
-                background: white;
-                padding: 20px;
-                margin-bottom: 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }}
-            h1 {{
-                margin: 0;
-                color: #333;
-            }}
-            #reportContainer {{
-                height: 800px;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                background: white;
-            }}
-            .info {{
-                background: #e3f2fd;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 8px;
-                border-left: 4px solid #2196f3;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>📊 Quant Research Dashboard</h1>
-        </div>
+#     html_content = f"""
+#     <!DOCTYPE html>
+#     <html>
+#     <head>
+#         <title>Quant Research Dashboard</title>
+#         <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.22.0/dist/powerbi.min.js"></script>
+#         <style>
+#             body {{
+#                 margin: 0;
+#                 padding: 20px;
+#                 font-family: Arial, sans-serif;
+#                 background: #f5f5f5;
+#             }}
+#             .header {{
+#                 background: white;
+#                 padding: 20px;
+#                 margin-bottom: 20px;
+#                 border-radius: 8px;
+#                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+#             }}
+#             h1 {{
+#                 margin: 0;
+#                 color: #333;
+#             }}
+#             #reportContainer {{
+#                 height: 800px;
+#                 border: 1px solid #ddd;
+#                 border-radius: 8px;
+#                 background: white;
+#             }}
+#             .info {{
+#                 background: #e3f2fd;
+#                 padding: 15px;
+#                 margin: 20px 0;
+#                 border-radius: 8px;
+#                 border-left: 4px solid #2196f3;
+#             }}
+#         </style>
+#     </head>
+#     <body>
+#         <div class="header">
+#             <h1>📊 Quant Research Dashboard</h1>
+#         </div>
         
-        <div class="info">
-            <strong>Setup Instructions:</strong>
-            <ol>
-                <li>Configure Power BI credentials in your .env file</li>
-                <li>Set POWERBI_REPORT_ID, POWERBI_GROUP_ID, and POWERBI_EMBED_URL</li>
-                <li>Refresh this page to see your dashboard</li>
-            </ol>
-        </div>
+#         <div class="info">
+#             <strong>Setup Instructions:</strong>
+#             <ol>
+#                 <li>Configure Power BI credentials in your .env file</li>
+#                 <li>Set POWERBI_REPORT_ID, POWERBI_GROUP_ID, and POWERBI_EMBED_URL</li>
+#                 <li>Refresh this page to see your dashboard</li>
+#             </ol>
+#         </div>
         
-        <div id="reportContainer"></div>
+#         <div id="reportContainer"></div>
         
-        <script>
-            // Power BI embed configuration
-            var models = window['powerbi-client'].models;
+#         <script>
+#             // Power BI embed configuration
+#             var models = window['powerbi-client'].models;
             
-            var embedConfiguration = {{
-                type: 'report',
-                id: '{report_id}',
-                embedUrl: '{embed_url}',
-                tokenType: models.TokenType.Embed,
-                permissions: models.Permissions.Read,
-                settings: {{
-                    panes: {{
-                        filters: {{
-                            expanded: false,
-                            visible: true
-                        }}
-                    }},
-                    background: models.BackgroundType.Transparent,
-                }}
-            }};
+#             var embedConfiguration = {{
+#                 type: 'report',
+#                 id: '{report_id}',
+#                 embedUrl: '{embed_url}',
+#                 tokenType: models.TokenType.Embed,
+#                 permissions: models.Permissions.Read,
+#                 settings: {{
+#                     panes: {{
+#                         filters: {{
+#                             expanded: false,
+#                             visible: true
+#                         }}
+#                     }},
+#                     background: models.BackgroundType.Transparent,
+#                 }}
+#             }};
             
-            // Embed the report
-            var reportContainer = document.getElementById('reportContainer');
-            var powerbi = new window['powerbi-client'].service.Service();
+#             // Embed the report
+#             var reportContainer = document.getElementById('reportContainer');
+#             var powerbi = new window['powerbi-client'].service.Service();
             
-            if ('{report_id}' && '{embed_url}') {{
-                var report = powerbi.embed(reportContainer, embedConfiguration);
+#             if ('{report_id}' && '{embed_url}') {{
+#                 var report = powerbi.embed(reportContainer, embedConfiguration);
                 
-                report.on("loaded", function() {{
-                    console.log("Report loaded successfully");
-                }});
+#                 report.on("loaded", function() {{
+#                     console.log("Report loaded successfully");
+#                 }});
                 
-                report.on("error", function(event) {{
-                    console.error("Report error:", event.detail);
-                }});
-            }} else {{
-                reportContainer.innerHTML = '<div style="padding: 40px; text-align: center; color: #666;">Please configure Power BI settings in your .env file</div>';
-            }}
-        </script>
-    </body>
-    </html>
-    """
+#                 report.on("error", function(event) {{
+#                     console.error("Report error:", event.detail);
+#                 }});
+#             }} else {{
+#                 reportContainer.innerHTML = '<div style="padding: 40px; text-align: center; color: #666;">Please configure Power BI settings in your .env file</div>';
+#             }}
+#         </script>
+#     </body>
+#     </html>
+#     """
     return html_content
+@router.get("/dashboard-data")
+def get_dashboard_data(db: Session = Depends(get_db)):
+    """Get aggregated data for dashboard"""
+    try:
+        # Get all results
+        results = db.query(BacktestResult).all()
+        
+        # Calculate KPIs
+        total_tests = len(results)
+        avg_sharpe = sum(r.sharpe_ratio for r in results) / total_tests if total_tests > 0 else 0
+        best_return = max((r.total_return for r in results), default=0)
+        profitable_count = sum(1 for r in results if r.total_return > 0)
+        success_rate = (profitable_count / total_tests * 100) if total_tests > 0 else 0
+        avg_win_rate = sum(r.win_rate for r in results) / total_tests if total_tests > 0 else 0
+        
+        # Sharpe by ticker
+        ticker_data = db.query(
+            BacktestResult.ticker,
+            func.avg(BacktestResult.sharpe_ratio).label('avg_sharpe'),
+            func.avg(BacktestResult.total_return).label('avg_return'),
+            func.count(BacktestResult.id).label('count')
+        ).group_by(BacktestResult.ticker).all()
+        
+        # Timeline data
+        timeline_data = db.query(
+            BacktestResult.created_at,
+            BacktestResult.ticker,
+            BacktestResult.final_equity,
+            BacktestResult.sharpe_ratio
+        ).order_by(BacktestResult.created_at).all()
+        
+        # Risk vs Return scatter data
+        scatter_data = [{
+            'ticker': r.ticker,
+            'max_drawdown': float(r.max_drawdown),
+            'total_return': float(r.total_return),
+            'num_trades': r.num_trades,
+            'sharpe_ratio': float(r.sharpe_ratio)
+        } for r in results]
+        
+        # Recent results table
+        recent_results = db.query(BacktestResult).order_by(
+            BacktestResult.created_at.desc()
+        ).limit(10).all()
+        
+        return {
+            'kpis': {
+                'total_tests': total_tests,
+                'avg_sharpe': round(avg_sharpe, 2),
+                'best_return': round(best_return, 2),
+                'success_rate': round(success_rate, 1),
+                'avg_win_rate': round(avg_win_rate, 1)
+            },
+            'ticker_performance': [
+                {
+                    'ticker': t.ticker,
+                    'avg_sharpe': round(float(t.avg_sharpe), 2),
+                    'avg_return': round(float(t.avg_return), 2),
+                    'count': t.count
+                } for t in ticker_data
+            ],
+            'timeline': [
+                {
+                    'date': t.created_at.strftime('%Y-%m-%d %H:%M'),
+                    'ticker': t.ticker,
+                    'equity': float(t.final_equity),
+                    'sharpe': float(t.sharpe_ratio)
+                } for t in timeline_data
+            ],
+            'scatter': scatter_data,
+            'recent_results': [
+                {
+                    'id': r.id,
+                    'ticker': r.ticker,
+                    'strategy': r.strategy_name,
+                    'sharpe': round(float(r.sharpe_ratio), 2),
+                    'return': round(float(r.total_return), 2),
+                    'win_rate': round(float(r.win_rate), 1),
+                    'drawdown': round(float(r.max_drawdown), 2),
+                    'trades': r.num_trades,
+                    'date': r.created_at.strftime('%Y-%m-%d')
+                } for r in recent_results
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

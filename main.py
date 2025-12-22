@@ -206,11 +206,7 @@ def home():
                 </div>
                 
                 <div class="button-grid">
-                    <a href="/reports" class="btn btn-primary">
-                        <div class="btn-icon">📈</div>
-                        <div class="btn-title">View Reports</div>
-                        <div class="btn-desc">Interactive dashboard with live data</div>
-                    </a>
+
                     
                     <a href="/docs" class="btn btn-secondary">
                         <div class="btn-icon">📚</div>
@@ -233,11 +229,11 @@ def home():
                 
                 <div class="footer">
                     <p><strong>Quick Start:</strong></p>
-                    <p>1. Click "View Reports" to see your dashboard</p>
+                    <p>1. Click "Raw Data" to see THE TABLE</p>
                     <p>2. Use "API Documentation" to run backtests via POST /run-backtest</p>
                     <p>3. Download Power BI file for advanced custom analysis</p>
                     <br>
-                    <p>Built with FastAPI • Azure SQL • Chart.js • Power BI</p>
+                    <p>Built with FastAPI • Azure SQL • Power BI</p>
                 </div>
             </div>
         </div>
