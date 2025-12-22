@@ -63,19 +63,453 @@ def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/backtest-results")
-def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
-    """Get all backtest results"""
-    results = db.query(BacktestResult).order_by(BacktestResult.created_at.desc()).limit(limit).all()
-    return results
 
-@router.get("/backtest-results/{result_id}")
-def get_backtest_result(result_id: int, db: Session = Depends(get_db)):
-    """Get specific backtest result"""
-    result = db.query(BacktestResult).filter(BacktestResult.id == result_id).first()
-    if not result:
-        raise HTTPException(status_code=404, detail="Result not found")
-    return result
+
+@router.get("/backtest-results", response_class=HTMLResponse)
+def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
+    """Get all backtest results as HTML table"""
+    results = db.query(BacktestResult).order_by(BacktestResult.created_at.desc()).limit(limit).all()
+    
+    # Calculate summary stats
+    total = len(results)
+    avg_sharpe = sum(r.sharpe_ratio for r in results) / total if total > 0 else 0
+    profitable = sum(1 for r in results if r.total_return > 0)
+    success_rate = (profitable / total * 100) if total > 0 else 0
+    
+    # Generate table rows
+    rows_html = ""
+    for r in results:
+        sharpe_class = "excellent" if r.sharpe_ratio >= 1.5 else "good" if r.sharpe_ratio >= 1 else "average" if r.sharpe_ratio >= 0.5 else "poor"
+        return_class = "positive" if r.total_return >= 0 else "negative"
+        
+        rows_html += f"""
+        <tr>
+            <td>{r.id}</td>
+            <td><strong>{r.ticker}</strong></td>
+            <td>{r.strategy_name}</td>
+            <td>{r.start_date.strftime('%Y-%m-%d')}</td>
+            <td>{r.end_date.strftime('%Y-%m-%d')}</td>
+            <td class="{sharpe_class}">{r.sharpe_ratio:.2f}</td>
+            <td class="{return_class}">{r.total_return:.2f}%</td>
+            <td>{r.win_rate:.1f}%</td>
+            <td class="negative">{r.max_drawdown:.2f}%</td>
+            <td>{r.final_equity:.4f}</td>
+            <td>{r.num_trades}</td>
+            <td>{r.created_at.strftime('%Y-%m-%d %H:%M')}</td>
+        </tr>
+        """
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Backtest Results</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }}
+            
+            .header {{
+                background: white;
+                padding: 20px 30px;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 15px;
+            }}
+            
+            .header h1 {{
+                color: #333;
+                font-size: 28px;
+            }}
+            
+            .nav-buttons {{
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }}
+            
+            .btn {{
+                padding: 10px 20px;
+                background: #667eea;
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+                transition: background 0.3s;
+                border: none;
+                cursor: pointer;
+                font-size: 14px;
+            }}
+            
+            .btn:hover {{
+                background: #5568d3;
+            }}
+            
+            .btn-secondary {{
+                background: #6c757d;
+            }}
+            
+            .btn-secondary:hover {{
+                background: #5a6268;
+            }}
+            
+            .summary-cards {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                margin-bottom: 20px;
+            }}
+            
+            .summary-card {{
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                text-align: center;
+            }}
+            
+            .summary-value {{
+                font-size: 32px;
+                font-weight: bold;
+                color: #667eea;
+                margin: 10px 0;
+            }}
+            
+            .summary-label {{
+                color: #666;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }}
+            
+            .table-container {{
+                background: white;
+                padding: 0;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            
+            .table-header {{
+                padding: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }}
+            
+            .table-header h2 {{
+                font-size: 20px;
+                margin: 0;
+            }}
+            
+            .table-wrapper {{
+                overflow-x: auto;
+                max-height: 70vh;
+            }}
+            
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            
+            thead {{
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }}
+            
+            th {{
+                background: #f8f9fa;
+                color: #333;
+                padding: 15px 12px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #dee2e6;
+                white-space: nowrap;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            
+            td {{
+                padding: 12px;
+                border-bottom: 1px solid #eee;
+                font-size: 14px;
+            }}
+            
+            tr:hover {{
+                background: #f8f9fa;
+            }}
+            
+            tr:nth-child(even) {{
+                background: #fafafa;
+            }}
+            
+            tr:nth-child(even):hover {{
+                background: #f0f0f0;
+            }}
+            
+            .positive {{
+                color: #28a745;
+                font-weight: bold;
+            }}
+            
+            .negative {{
+                color: #dc3545;
+                font-weight: bold;
+            }}
+            
+            .excellent {{
+                color: #28a745;
+                font-weight: bold;
+            }}
+            
+            .good {{
+                color: #20c997;
+                font-weight: bold;
+            }}
+            
+            .average {{
+                color: #ffc107;
+                font-weight: bold;
+            }}
+            
+            .poor {{
+                color: #dc3545;
+                font-weight: bold;
+            }}
+            
+            .filter-bar {{
+                background: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
+                display: flex;
+                gap: 15px;
+                flex-wrap: wrap;
+                align-items: center;
+            }}
+            
+            .filter-bar label {{
+                font-weight: 600;
+                color: #333;
+            }}
+            
+            .filter-bar select, .filter-bar input {{
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                font-size: 14px;
+            }}
+            
+            .no-results {{
+                text-align: center;
+                padding: 40px;
+                color: #666;
+                font-size: 16px;
+            }}
+            
+            .export-btn {{
+                background: #28a745;
+            }}
+            
+            .export-btn:hover {{
+                background: #218838;
+            }}
+            
+            @media (max-width: 768px) {{
+                .header {{
+                    flex-direction: column;
+                    align-items: flex-start;
+                }}
+                
+                .table-wrapper {{
+                    max-height: 60vh;
+                }}
+                
+                td, th {{
+                    font-size: 12px;
+                    padding: 8px;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📊 Backtest Results</h1>
+            <div class="nav-buttons">
+                <a href="/" class="btn btn-secondary">← Home</a>
+                <a href="/reports" class="btn">📈 Reports</a>
+                <a href="/docs" class="btn">📚 API Docs</a>
+                <button onclick="exportToCSV()" class="btn export-btn">📥 Export CSV</button>
+                <button onclick="exportToJSON()" class="btn export-btn">📥 Export JSON</button>
+            </div>
+        </div>
+        
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="summary-label">Total Results</div>
+                <div class="summary-value">{total}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Avg Sharpe Ratio</div>
+                <div class="summary-value">{avg_sharpe:.2f}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Success Rate</div>
+                <div class="summary-value">{success_rate:.0f}%</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Profitable Tests</div>
+                <div class="summary-value">{profitable}</div>
+            </div>
+        </div>
+        
+        <div class="filter-bar">
+            <label>Filter by Ticker:</label>
+            <select id="tickerFilter" onchange="filterTable()">
+                <option value="">All Tickers</option>
+            </select>
+            
+            <label>Filter by Strategy:</label>
+            <select id="strategyFilter" onchange="filterTable()">
+                <option value="">All Strategies</option>
+            </select>
+            
+            <label>Min Sharpe:</label>
+            <input type="number" id="minSharpe" placeholder="0.0" step="0.1" onchange="filterTable()" style="width: 80px;">
+            
+            <label>Show:</label>
+            <select id="showFilter" onchange="filterTable()">
+                <option value="all">All Results</option>
+                <option value="profitable">Profitable Only</option>
+                <option value="loss">Losses Only</option>
+            </select>
+        </div>
+        
+        <div class="table-container">
+            <div class="table-header">
+                <h2>All Backtest Results ({total} total)</h2>
+            </div>
+            <div class="table-wrapper">
+                {'<table id="resultsTable"><thead><tr><th>ID</th><th>Ticker</th><th>Strategy</th><th>Start Date</th><th>End Date</th><th>Sharpe Ratio</th><th>Total Return</th><th>Win Rate</th><th>Max Drawdown</th><th>Final Equity</th><th>Trades</th><th>Created</th></tr></thead><tbody>' + rows_html + '</tbody></table>' if total > 0 else '<div class="no-results">No backtest results found. Run some backtests to see data here!</div>'}
+            </div>
+        </div>
+        
+        <script>
+            // Populate filter dropdowns
+            const table = document.getElementById('resultsTable');
+            if (table) {{
+                const rows = table.querySelectorAll('tbody tr');
+                const tickers = new Set();
+                const strategies = new Set();
+                
+                rows.forEach(row => {{
+                    tickers.add(row.cells[1].textContent.trim());
+                    strategies.add(row.cells[2].textContent.trim());
+                }});
+                
+                const tickerFilter = document.getElementById('tickerFilter');
+                [...tickers].sort().forEach(ticker => {{
+                    const option = document.createElement('option');
+                    option.value = ticker;
+                    option.textContent = ticker;
+                    tickerFilter.appendChild(option);
+                }});
+                
+                const strategyFilter = document.getElementById('strategyFilter');
+                [...strategies].sort().forEach(strategy => {{
+                    const option = document.createElement('option');
+                    option.value = strategy;
+                    option.textContent = strategy;
+                    strategyFilter.appendChild(option);
+                }});
+            }}
+            
+            function filterTable() {{
+                const table = document.getElementById('resultsTable');
+                if (!table) return;
+                
+                const ticker = document.getElementById('tickerFilter').value;
+                const strategy = document.getElementById('strategyFilter').value;
+                const minSharpe = parseFloat(document.getElementById('minSharpe').value) || -999;
+                const showFilter = document.getElementById('showFilter').value;
+                const rows = table.querySelectorAll('tbody tr');
+                
+                let visibleCount = 0;
+                
+                rows.forEach(row => {{
+                    const rowTicker = row.cells[1].textContent.trim();
+                    const rowStrategy = row.cells[2].textContent.trim();
+                    const rowSharpe = parseFloat(row.cells[5].textContent);
+                    const rowReturn = parseFloat(row.cells[6].textContent);
+                    
+                    let show = true;
+                    
+                    if (ticker && rowTicker !== ticker) show = false;
+                    if (strategy && rowStrategy !== strategy) show = false;
+                    if (rowSharpe < minSharpe) show = false;
+                    if (showFilter === 'profitable' && rowReturn < 0) show = false;
+                    if (showFilter === 'loss' && rowReturn >= 0) show = false;
+                    
+                    row.style.display = show ? '' : 'none';
+                    if (show) visibleCount++;
+                }});
+                
+                document.querySelector('.table-header h2').textContent = 
+                    `All Backtest Results (${{visibleCount}} shown of {total} total)`;
+            }}
+            
+            function exportToCSV() {{
+                const table = document.getElementById('resultsTable');
+                if (!table) {{
+                    alert('No data to export');
+                    return;
+                }}
+                
+                let csv = [];
+                const rows = table.querySelectorAll('tr');
+                
+                rows.forEach(row => {{
+                    const cols = row.querySelectorAll('td, th');
+                    const csvRow = [];
+                    cols.forEach(col => csvRow.push(col.textContent.trim()));
+                    csv.push(csvRow.join(','));
+                }});
+                
+                const csvContent = csv.join('\\n');
+                const blob = new Blob([csvContent], {{ type: 'text/csv' }});
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'backtest_results.csv';
+                a.click();
+            }}
+            
+            function exportToJSON() {{
+                window.location.href = '/backtest-results-json';
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    return html_content
 @router.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard():
     """Serve Power BI embedded dashboard"""

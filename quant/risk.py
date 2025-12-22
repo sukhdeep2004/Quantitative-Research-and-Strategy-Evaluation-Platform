@@ -6,7 +6,7 @@ def sharpe_ratio(returns, rf=0):
 
 def max_drawdown(equity):
     peak = equity.cummax()
-    drawdown = (equity - peak) / peak
+    drawdown = (peak-equity) / peak
     return drawdown.min()
 
 def value_at_risk(returns, alpha=0.05):
