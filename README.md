@@ -12,10 +12,9 @@ Azure SQL Storage - Persistent storage of all backtest results
 
 📊 Visualization & Reporting
 
-Interactive Dashboard - Real-time charts and analytics using Chart.js
 Power BI Integration - Advanced analytics with downloadable .pbix files
 HTML Table Views - Sortable, filterable results with color coding
-Export Options - CSV and JSON export for further analysis
+Export Options - CSV  export for further analysis
 
 🔌 API
 
