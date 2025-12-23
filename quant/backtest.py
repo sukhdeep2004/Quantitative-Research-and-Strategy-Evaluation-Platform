@@ -16,9 +16,6 @@ def run_all_backtests(ticker, start, end):
     Runs backtests for 4 strategies and returns a model dictionary
     """
 
-    # ======================
-    # Load Data
-    # ======================
     df = fetch_price_data(ticker, start, end)
 
     returns = df['returns']

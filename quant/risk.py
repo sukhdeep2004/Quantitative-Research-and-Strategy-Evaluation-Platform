@@ -8,7 +8,7 @@ def max_drawdown(equity):
     """Calculate maximum drawdown as a positive percentage"""
     peak = equity.cummax()
     drawdown = (peak - equity) / peak
-    return drawdown.max()  # Returns positive value (e.g., 0.15 = 15% drawdown)
+    return drawdown.max()
 
 def value_at_risk(returns, alpha=0.05):
     return np.percentile(returns, 100 * alpha)
@@ -22,7 +22,6 @@ def compute_metrics(equity_curve, strategy_returns):
     final_equity = equity_curve.iloc[-1]
     total_return = (final_equity - 1) * 100
 
-    # Calculate win rate correctly
     winning_trades = (strategy_returns > 0).sum()
     total_trades = (strategy_returns != 0).sum()
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0

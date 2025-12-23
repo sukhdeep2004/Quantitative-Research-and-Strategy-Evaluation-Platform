@@ -4,7 +4,6 @@ import pandas as pd
 def fetch_price_data(ticker, start, end):
     df = yf.download(ticker, start=start, end=end, auto_adjust=True)
 
-    # ---- Robust price selection ----
     if 'Adj Close' in df.columns:
         price_col = 'Adj Close'
     elif 'Close' in df.columns:

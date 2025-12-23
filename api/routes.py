@@ -1084,6 +1084,7 @@ def download_powerbi():
             status_code=404, 
             detail="Power BI file not found. Please place your .pbix file in the project root directory."
         )
+#if i ge permission to use power bi emebdded i will uncomment this section
 # @router.get("/dashboard", response_class=HTMLResponse)
 # def get_dashboard():
 #     """Serve Power BI embedded dashboard"""
@@ -1189,7 +1190,7 @@ def download_powerbi():
 #     </body>
 #     </html>
 #     """
-    return html_content
+    # return html_content
 @router.get("/dashboard-data")
 def get_dashboard_data(db: Session = Depends(get_db)):
     """Get aggregated data for dashboard"""
