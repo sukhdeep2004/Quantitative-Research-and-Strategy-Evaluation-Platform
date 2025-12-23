@@ -3,7 +3,6 @@ from db.models import Base, BacktestResult
 from quant.backtest import run_all_backtests
 from quant.risk import compute_metrics
 from datetime import datetime, timedelta
-import random
 
 def test_connection():
     """Test database connection"""

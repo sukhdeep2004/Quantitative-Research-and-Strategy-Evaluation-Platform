@@ -3,8 +3,8 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from quant.data import fetch_price_data
-from quant.backtest import backtest
-from quant.risk import sharpe_ratio, max_drawdown
+from quant.backtest import backtest,run_all_backtests
+from quant.risk import sharpe_ratio, max_drawdown, compute_metrics
 from db.models import BacktestResult
 from db.session import get_db
 from api.schemas import BacktestRequest
@@ -12,6 +12,569 @@ from sqlalchemy import func
 import os
 
 router = APIRouter()
+@router.get("/run-all-backtests", response_class=HTMLResponse)
+def get_run_all_backtests_page():
+    """Page to run all backtests for a selected stock"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Run All Backtests</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            
+            .header {
+                background: white;
+                padding: 20px 30px;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 15px;
+            }
+            
+            .header h1 {
+                color: #333;
+                font-size: 28px;
+            }
+            
+            .btn {
+                padding: 10px 20px;
+                background: #667eea;
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+                transition: background 0.3s;
+                border: none;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            
+            .btn:hover {
+                background: #5568d3;
+            }
+            
+            .main-container {
+                background: white;
+                padding: 40px;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            
+            .form-section {
+                margin-bottom: 30px;
+            }
+            
+            .form-section h2 {
+                color: #333;
+                margin-bottom: 20px;
+                font-size: 24px;
+            }
+            
+            .form-group {
+                margin-bottom: 20px;
+            }
+            
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: #333;
+            }
+            
+            .form-group input,
+            .form-group select {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                font-size: 16px;
+                transition: border-color 0.3s;
+            }
+            
+            .form-group input:focus,
+            .form-group select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            
+            .btn-submit {
+                width: 100%;
+                padding: 15px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: opacity 0.3s;
+            }
+            
+            .btn-submit:hover {
+                opacity: 0.9;
+            }
+            
+            .btn-submit:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            
+            .loading {
+                display: none;
+                text-align: center;
+                margin: 20px 0;
+                color: #667eea;
+            }
+            
+            .loading.active {
+                display: block;
+            }
+            
+            .spinner {
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #667eea;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 10px;
+            }
+            
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            
+            .results-container {
+                display: none;
+                margin-top: 30px;
+            }
+            
+            .results-container.active {
+                display: block;
+            }
+            
+            .results-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 20px;
+                border-radius: 10px 10px 0 0;
+                margin-top: 30px;
+            }
+            
+            .results-header h3 {
+                margin: 0;
+                font-size: 20px;
+            }
+            
+            .results-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 0;
+                border-radius: 0 0 10px 10px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }
+            
+            .results-table thead {
+                background: #f8f9fa;
+            }
+            
+            .results-table th {
+                padding: 15px;
+                text-align: left;
+                font-weight: 600;
+                color: #333;
+                border-bottom: 2px solid #dee2e6;
+            }
+            
+            .results-table td {
+                padding: 12px 15px;
+                border-bottom: 1px solid #eee;
+            }
+            
+            .results-table tr:hover {
+                background: #f8f9fa;
+            }
+            
+            .positive {
+                color: #28a745;
+                font-weight: bold;
+            }
+            
+            .negative {
+                color: #dc3545;
+                font-weight: bold;
+            }
+            
+            .excellent {
+                color: #28a745;
+                font-weight: bold;
+            }
+            
+            .good {
+                color: #20c997;
+                font-weight: bold;
+            }
+            
+            .average {
+                color: #ffc107;
+                font-weight: bold;
+            }
+            
+            .poor {
+                color: #dc3545;
+                font-weight: bold;
+            }
+            
+            .info-box {
+                background: #e3f2fd;
+                padding: 15px;
+                border-radius: 5px;
+                border-left: 4px solid #2196f3;
+                margin-bottom: 20px;
+            }
+            
+            .error-box {
+                background: #ffebee;
+                padding: 15px;
+                border-radius: 5px;
+                border-left: 4px solid #f44336;
+                margin: 20px 0;
+                display: none;
+            }
+            
+            .error-box.active {
+                display: block;
+            }
+            
+            .success-message {
+                background: #d4edda;
+                color: #155724;
+                padding: 15px;
+                border-radius: 5px;
+                border-left: 4px solid #28a745;
+                margin: 20px 0;
+                display: none;
+            }
+            
+            .success-message.active {
+                display: block;
+            }
+            
+            datalist {
+                max-height: 200px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🚀 Run All Backtests</h1>
+            <a href="/" class="btn">← Home</a>
+        </div>
+        
+        <div class="main-container">
+            <div class="form-section">
+                <h2>Select Stock to Backtest</h2>
+                
+                <div class="info-box">
+                    <strong>📊 What this does:</strong><br>
+                    Runs 4 different trading strategies (Moving Average, RSI, MACD, Bollinger Bands) on your selected stock over the past year. Results will be saved to the database and displayed below.
+                </div>
+                
+                <form id="backtestForm">
+                    <div class="form-group">
+                        <label for="ticker">Stock Symbol</label>
+                        <input 
+                            type="text" 
+                            id="ticker" 
+                            name="ticker" 
+                            placeholder="e.g., AAPL, MSFT, GOOGL" 
+                            list="common-tickers"
+                            required
+                        >
+                        <datalist id="common-tickers">
+                            <option value="AAPL">Apple Inc.</option>
+                            <option value="MSFT">Microsoft</option>
+                            <option value="GOOGL">Alphabet (Google)</option>
+                            <option value="AMZN">Amazon</option>
+                            <option value="TSLA">Tesla</option>
+                            <option value="META">Meta (Facebook)</option>
+                            <option value="NVDA">NVIDIA</option>
+                            <option value="JPM">JPMorgan Chase</option>
+                            <option value="V">Visa</option>
+                            <option value="WMT">Walmart</option>
+                            <option value="MA">Mastercard</option>
+                            <option value="PG">Procter & Gamble</option>
+                            <option value="DIS">Disney</option>
+                            <option value="NFLX">Netflix</option>
+                            <option value="PYPL">PayPal</option>
+                            <option value="ADBE">Adobe</option>
+                            <option value="CSCO">Cisco</option>
+                            <option value="INTC">Intel</option>
+                            <option value="AMD">AMD</option>
+                            <option value="CRM">Salesforce</option>
+                            <option value="ORCL">Oracle</option>
+                            <option value="IBM">IBM</option>
+                            <option value="BA">Boeing</option>
+                            <option value="GE">General Electric</option>
+                            <option value="F">Ford</option>
+                            <option value="GM">General Motors</option>
+                            <option value="UBER">Uber</option>
+                            <option value="LYFT">Lyft</option>
+                            <option value="SQ">Block (Square)</option>
+                            <option value="SHOP">Shopify</option>
+                        </datalist>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="start_date">Start Date</label>
+                        <input 
+                            type="date" 
+                            id="start_date" 
+                            name="start_date" 
+                            required
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="end_date">End Date</label>
+                        <input 
+                            type="date" 
+                            id="end_date" 
+                            name="end_date" 
+                            required
+                        >
+                    </div>
+                    
+                    <button type="submit" class="btn-submit" id="submitBtn">
+                        Run All Strategies
+                    </button>
+                </form>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Running backtests... This may take a moment.</p>
+                </div>
+                
+                <div class="error-box" id="errorBox"></div>
+                <div class="success-message" id="successMessage"></div>
+            </div>
+            
+            <div class="results-container" id="resultsContainer">
+                <div class="results-header">
+                    <h3>Backtest Results</h3>
+                </div>
+                <table class="results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Sharpe Ratio</th>
+                            <th>Total Return</th>
+                            <th>Win Rate</th>
+                            <th>Max Drawdown</th>
+                            <th>Final Equity</th>
+                            <th>Trades</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <script>
+            // Set default dates (1 year back)
+            const today = new Date();
+            const oneYearAgo = new Date(today);
+            oneYearAgo.setFullYear(today.getFullYear() - 1);
+            
+            document.getElementById('end_date').valueAsDate = today;
+            document.getElementById('start_date').valueAsDate = oneYearAgo;
+            
+            // Handle form submission
+            document.getElementById('backtestForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const ticker = document.getElementById('ticker').value.toUpperCase();
+                const startDate = document.getElementById('start_date').value;
+                const endDate = document.getElementById('end_date').value;
+                
+                // Show loading
+                document.getElementById('loading').classList.add('active');
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('errorBox').classList.remove('active');
+                document.getElementById('successMessage').classList.remove('active');
+                document.getElementById('resultsContainer').classList.remove('active');
+                
+                try {
+                    const response = await fetch('/run-all-backtests-api', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            ticker: ticker,
+                            start_date: startDate,
+                            end_date: endDate
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to run backtests');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Show success message
+                    document.getElementById('successMessage').textContent = 
+                        `✓ Successfully ran ${data.results.length} backtests for ${ticker}. Results saved to database.`;
+                    document.getElementById('successMessage').classList.add('active');
+                    
+                    // Display results
+                    displayResults(data.results);
+                    
+                } catch (error) {
+                    document.getElementById('errorBox').textContent = '✗ Error: ' + error.message;
+                    document.getElementById('errorBox').classList.add('active');
+                } finally {
+                    document.getElementById('loading').classList.remove('active');
+                    document.getElementById('submitBtn').disabled = false;
+                }
+            });
+            
+            function displayResults(results) {
+                const tbody = document.getElementById('resultsBody');
+                tbody.innerHTML = '';
+                
+                results.forEach(result => {
+                    const row = document.createElement('tr');
+                    
+                    const sharpeClass = result.sharpe_ratio >= 1.5 ? 'excellent' : 
+                                       result.sharpe_ratio >= 1 ? 'good' : 
+                                       result.sharpe_ratio >= 0.5 ? 'average' : 'poor';
+                    
+                    const returnClass = result.total_return >= 0 ? 'positive' : 'negative';
+                    
+                    row.innerHTML = `
+                        <td><strong>${result.strategy_name}</strong></td>
+                        <td class="${sharpeClass}">${result.sharpe_ratio.toFixed(2)}</td>
+                        <td class="${returnClass}">${result.total_return.toFixed(2)}%</td>
+                        <td>${result.win_rate.toFixed(1)}%</td>
+                        <td class="negative">${result.max_drawdown.toFixed(2)}%</td>
+                        <td>${result.final_equity.toFixed(4)}</td>
+                        <td>${result.num_trades}</td>
+                    `;
+                    
+                    tbody.appendChild(row);
+                });
+                
+                document.getElementById('resultsContainer').classList.add('active');
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+@router.post("/run-all-backtests-api")
+async def run_all_backtests_api(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """Run all backtests for a given ticker and save to database"""
+    try:
+        ticker = request.get('ticker', '').upper()
+        start_date = request.get('start_date')
+        end_date = request.get('end_date')
+        
+        if not ticker or not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="Missing required fields")
+        
+        # Convert string dates to date objects
+        from datetime import datetime
+        start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
+        # Run all backtests
+        backtest_results = run_all_backtests(ticker, start, end)
+        
+        results_list = []
+        
+        # Process and save each strategy result
+        for strategy_name, model in backtest_results.items():
+            equity = model['equity_curve']
+            returns = model['returns']
+            
+            final_equity, total_return, win_rate, num_trades = compute_metrics(
+                equity, returns
+            )
+            
+            # Create database record
+            result = BacktestResult(
+                ticker=ticker,
+                start_date=start,
+                end_date=end,
+                strategy_name=strategy_name,
+                sharpe_ratio=round(model['sharpe'], 3),
+                final_equity=round(final_equity, 4),
+                max_drawdown=round(model['max_drawdown'], 4) * 100,  # Store as percentage
+                total_return=round(total_return, 2),
+                win_rate=round(win_rate, 2),
+                num_trades=int(num_trades),
+                created_at=datetime.now()
+            )
+            
+            db.add(result)
+            
+            # Add to results list for display
+            results_list.append({
+                'strategy_name': strategy_name,
+                'sharpe_ratio': round(model['sharpe'], 3),
+                'final_equity': round(final_equity, 4),
+                'max_drawdown': round(model['max_drawdown'], 4) * 100,
+                'total_return': round(total_return, 2),
+                'win_rate': round(win_rate, 2),
+                'num_trades': int(num_trades)
+            })
+        
+        # Commit all results
+        db.commit()
+        
+        return {
+            'ticker': ticker,
+            'start_date': start_date,
+            'end_date': end_date,
+            'results': results_list,
+            'message': f'Successfully ran {len(results_list)} backtests for {ticker}'
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error running backtests: {str(e)}")
+
 @router.post("/run-backtest")
 def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
     try:

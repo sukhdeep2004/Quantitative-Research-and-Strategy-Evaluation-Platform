@@ -207,7 +207,11 @@ def home():
                 
                 <div class="button-grid">
 
-                    
+                     <a href="/run-all-backtests" class="btn btn-primary">
+                        <div class="btn-icon">🚀</div>
+                        <div class="btn-title">Run All Backtests</div>
+                        <div class="btn-desc">Test multiple strategies on any stock</div>
+                    </a>
                     <a href="/docs" class="btn btn-secondary">
                         <div class="btn-icon">📚</div>
                         <div class="btn-title">API Documentation</div>
