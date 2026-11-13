@@ -18,6 +18,7 @@ class BacktestResult(Base):
     __tablename__ = "backtest_results"
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticker = Column(String(10), nullable=False)
+    pair_ticker = Column(String(10))
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     strategy_name = Column(String(100), default="Moving Average")
@@ -33,9 +34,10 @@ class BacktestResult(Base):
 
     @classmethod
     def from_run(cls, ticker, start_date, end_date, strategy_name, run):
-        """Build a row from one entry returned by quant.backtest.run_strategy"""
+        """Build a row from one entry returned by quant.backtest.run_strategy or run_cointegration"""
         return cls(
             ticker=ticker.upper(),
+            pair_ticker=run.get('pair_ticker'),
             start_date=start_date,
             end_date=end_date,
             strategy_name=strategy_name,

@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.stats import norm
 
 def sharpe_ratio(returns, rf=0):
     return (returns.mean() - rf) / returns.std() * np.sqrt(252)

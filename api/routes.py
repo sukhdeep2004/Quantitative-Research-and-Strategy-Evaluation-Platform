@@ -3,10 +3,10 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from quant.data import fetch_price_data
-from quant.backtest import run_all_backtests, run_strategy
+from quant.backtest import run_all_backtests, run_strategy, run_cointegration
 from db.models import BacktestResult
 from db.session import get_db
-from api.schemas import BacktestRequest
+from api.schemas import BacktestRequest, PairBacktestRequest
 from sqlalchemy import func
 import os
 
@@ -297,7 +297,7 @@ def get_run_all_backtests_page():
                 
                 <div class="info-box">
                     <strong>📊 What this does:</strong><br>
-                    Runs 4 different trading strategies (Moving Average, RSI, MACD, Bollinger Bands) on your selected stock over the past year. Results will be saved to the database and displayed below.
+                    Runs 4 different trading strategies (Moving Average, RSI, MACD, Bollinger Bands) on your selected stock over the chosen dates. Add a pair stock to also run the cointegration pairs strategy between the two. Results will be saved to the database and displayed below.
                 </div>
                 
                 <form id="backtestForm">
@@ -342,7 +342,22 @@ def get_run_all_backtests_page():
                             <option value="LYFT">Lyft</option>
                             <option value="SQ">Block (Square)</option>
                             <option value="SHOP">Shopify</option>
+                            <option value="KO">Coca-Cola</option>
+                            <option value="PEP">PepsiCo</option>
+                            <option value="XOM">Exxon Mobil</option>
+                            <option value="CVX">Chevron</option>
                         </datalist>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="pair_ticker">Pair Stock (optional, adds cointegration)</label>
+                        <input 
+                            type="text" 
+                            id="pair_ticker" 
+                            name="pair_ticker" 
+                            placeholder="e.g., PEP to trade KO against PEP" 
+                            list="common-tickers"
+                        >
                     </div>
                     
                     <div class="form-group">
@@ -415,6 +430,7 @@ def get_run_all_backtests_page():
                 e.preventDefault();
                 
                 const ticker = document.getElementById('ticker').value.toUpperCase();
+                const pairTicker = document.getElementById('pair_ticker').value.trim().toUpperCase();
                 const startDate = document.getElementById('start_date').value;
                 const endDate = document.getElementById('end_date').value;
                 
@@ -433,6 +449,7 @@ def get_run_all_backtests_page():
                         },
                         body: JSON.stringify({
                             ticker: ticker,
+                            pair_ticker: pairTicker,
                             start_date: startDate,
                             end_date: endDate
                         })
@@ -476,7 +493,7 @@ def get_run_all_backtests_page():
                     const returnClass = result.total_return >= 0 ? 'positive' : 'negative';
                     
                     row.innerHTML = `
-                        <td><strong>${result.strategy_name}</strong></td>
+                        <td><strong>${result.strategy_name}</strong>${result.pair_ticker ? ` vs ${result.pair_ticker} (p=${result.coint_pvalue.toFixed(3)})` : ''}</td>
                         <td class="${sharpeClass}">${result.sharpe_ratio.toFixed(2)}</td>
                         <td class="${returnClass}">${result.total_return.toFixed(2)}%</td>
                         <td>${result.win_rate.toFixed(1)}%</td>
@@ -504,6 +521,7 @@ async def run_all_backtests_api(
     """Run all backtests for a given ticker and save to database"""
     try:
         ticker = request.get('ticker', '').upper()
+        pair_ticker = (request.get('pair_ticker') or '').strip().upper()
         start_date = request.get('start_date')
         end_date = request.get('end_date')
         
@@ -515,7 +533,7 @@ async def run_all_backtests_api(
         end = datetime.strptime(end_date, '%Y-%m-%d').date()
         
         # Run all backtests
-        backtest_results = run_all_backtests(ticker, start, end)
+        backtest_results = run_all_backtests(ticker, start, end, pair_ticker or None)
         
         results_list = []
         
@@ -526,6 +544,8 @@ async def run_all_backtests_api(
             # Add to results list for display
             results_list.append({
                 'strategy_name': strategy_name,
+                'pair_ticker': run.get('pair_ticker'),
+                'coint_pvalue': run.get('coint_pvalue'),
                 'parameters': run['params'],
                 **run['metrics']
             })
@@ -542,7 +562,7 @@ async def run_all_backtests_api(
         }
         
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error running backtests: {str(e)}")
@@ -570,6 +590,35 @@ def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/run-pair-backtest")
+def run_pair_backtest(req: PairBacktestRequest, db: Session = Depends(get_db)):
+    """Backtest the cointegration pairs strategy of ticker against pair_ticker and save the result"""
+    try:
+        strategy_name = "Cointegration"
+        df = fetch_price_data(req.ticker, req.start, req.end)
+        pair_df = fetch_price_data(req.pair_ticker, req.start, req.end)
+        run = run_cointegration(df, pair_df, req.pair_ticker)
+
+        result = BacktestResult.from_run(req.ticker, req.start, req.end, strategy_name, run)
+        db.add(result)
+        db.commit()
+        db.refresh(result)
+        return {
+            "id": result.id,
+            "ticker": result.ticker,
+            "pair_ticker": result.pair_ticker,
+            "strategy_name": strategy_name,
+            "coint_pvalue": run['coint_pvalue'],
+            "parameters": run['params'],
+            **run['metrics'],
+            "code_version": result.code_version,
+            "created_at": result.created_at
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/backtest-results", response_class=HTMLResponse)
@@ -592,7 +641,7 @@ def get_backtest_results(db: Session = Depends(get_db), limit: int = 100):
         rows_html += f"""
         <tr>
             <td>{r.id}</td>
-            <td><strong>{r.ticker}</strong></td>
+            <td><strong>{r.ticker}{'/' + r.pair_ticker if r.pair_ticker else ''}</strong></td>
             <td>{r.strategy_name}</td>
             <td>{r.start_date.strftime('%Y-%m-%d')}</td>
             <td>{r.end_date.strftime('%Y-%m-%d')}</td>

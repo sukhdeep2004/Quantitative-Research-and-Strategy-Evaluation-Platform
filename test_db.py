@@ -2,7 +2,8 @@ import sys
 from db.session import engine, SessionLocal
 from db.models import BacktestResult
 from db.init_db import init_database
-from quant.backtest import run_all_backtests
+from quant.backtest import run_all_backtests, run_cointegration
+from quant.data import fetch_price_data
 from datetime import datetime, timedelta
 
 def test_connection():
@@ -31,7 +32,7 @@ def insert_sample_data():
 
     try:
         tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA']
-        
+        pairs = [('KO', 'PEP'), ('V', 'MA')]
 
         end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
         start_date = end_date - timedelta(days=365)  # 1 year back
@@ -45,6 +46,15 @@ def insert_sample_data():
 
             for strategy_name, run in backtest_results.items():
                 db.add(BacktestResult.from_run(ticker, start_date, end_date, strategy_name, run))
+
+        for ticker, pair_ticker in pairs:
+            print(f"Processing {ticker}/{pair_ticker}...")
+            run = run_cointegration(
+                fetch_price_data(ticker, start_date, end_date),
+                fetch_price_data(pair_ticker, start_date, end_date),
+                pair_ticker,
+            )
+            db.add(BacktestResult.from_run(ticker, start_date, end_date, 'Cointegration', run))
 
         db.commit()
         print("✓ Successfully inserted real backtest results!")
