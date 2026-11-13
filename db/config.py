@@ -2,7 +2,10 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-URL= "mssql+pyodbc://quantadmin:Neeru#1983@quantadmin.database.windows.net:1433/quantdb?driver=ODBC+Driver+18+for+SQL+Server"
 
-DATABASE_URL = os.getenv("DATABASE_URL", URL)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Copy .env.example to .env and fill in your Azure SQL connection string."
+    )
