@@ -3,8 +3,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from quant.data import fetch_price_data
-from quant.backtest import backtest,run_all_backtests
-from quant.risk import sharpe_ratio, max_drawdown, compute_metrics
+from quant.backtest import run_all_backtests, run_strategy
 from db.models import BacktestResult
 from db.session import get_db
 from api.schemas import BacktestRequest
@@ -512,7 +511,6 @@ async def run_all_backtests_api(
             raise HTTPException(status_code=400, detail="Missing required fields")
         
         # Convert string dates to date objects
-        from datetime import datetime
         start = datetime.strptime(start_date, '%Y-%m-%d').date()
         end = datetime.strptime(end_date, '%Y-%m-%d').date()
         
@@ -522,40 +520,14 @@ async def run_all_backtests_api(
         results_list = []
         
         # Process and save each strategy result
-        for strategy_name, model in backtest_results.items():
-            equity = model['equity_curve']
-            returns = model['returns']
-            
-            final_equity, total_return, win_rate, num_trades = compute_metrics(
-                equity, returns
-            )
-            
-            # Create database record
-            result = BacktestResult(
-                ticker=ticker,
-                start_date=start,
-                end_date=end,
-                strategy_name=strategy_name,
-                sharpe_ratio=round(model['sharpe'], 3),
-                final_equity=round(final_equity, 4),
-                max_drawdown=round(model['max_drawdown'], 4) * 100,  # Store as percentage
-                total_return=round(total_return, 2),
-                win_rate=round(win_rate, 2),
-                num_trades=int(num_trades),
-                created_at=datetime.now()
-            )
-            
-            db.add(result)
+        for strategy_name, run in backtest_results.items():
+            db.add(BacktestResult.from_run(ticker, start, end, strategy_name, run))
             
             # Add to results list for display
             results_list.append({
                 'strategy_name': strategy_name,
-                'sharpe_ratio': round(model['sharpe'], 3),
-                'final_equity': round(final_equity, 4),
-                'max_drawdown': round(model['max_drawdown'], 4) * 100,
-                'total_return': round(total_return, 2),
-                'win_rate': round(win_rate, 2),
-                'num_trades': int(num_trades)
+                'parameters': run['params'],
+                **run['metrics']
             })
         
         # Commit all results
@@ -578,51 +550,22 @@ async def run_all_backtests_api(
 @router.post("/run-backtest")
 def run_backtest(req: BacktestRequest, db: Session = Depends(get_db)):
     try:
+        strategy_name = "Moving Average"
         df = fetch_price_data(req.ticker, req.start, req.end)
-        signals = df['returns'].rolling(20).mean().apply(lambda x: -1 if x > 0 else 1)
-        equity, strat_returns = backtest(df['returns'], signals)
+        run = run_strategy(df, strategy_name)
 
-        #metrics
-        sharpe = sharpe_ratio(strat_returns)
-        final_eq = float(equity.iloc[-1])
-        max_dd = max_drawdown(equity)
-        total_ret = ((final_eq - 1) * 100)
-
-        #trades number
-        num_trades = (signals.diff() != 0).sum()
-
-        #win rate
-        winning_trades= strat_returns[strat_returns > 0].count()
-        total_trades = strat_returns[strat_returns != 0].count()
-        win_rate = winning_trades / (total_trades*100) if total_trades > 0 else 0
-
-        result={
-            "ticker": req.ticker,
-            "start_date": req.start,
-            "end_date": req.end,
-            "strategy_name": "Moving Average",
-            "sharpe_ratio": float(sharpe),
-            "final_equity": final_eq,
-            "max_drawdown": float(max_dd),
-            "total_return": float(total_ret),
-            "win_rate": float(win_rate),
-            "num_trades": int(num_trades),
-            "created_at": datetime.utcnow()
-        }
-        BacktestResult_instance = BacktestResult(**result)
-        db.add(BacktestResult_instance)
+        result = BacktestResult.from_run(req.ticker, req.start, req.end, strategy_name, run)
+        db.add(result)
         db.commit()
-        db.refresh(BacktestResult_instance)
+        db.refresh(result)
         return {
-            "id": BacktestResult_instance.id,
-            "ticker": BacktestResult_instance.ticker,
-            "sharpe": float(sharpe),
-            "final_equity": final_eq,
-            "max_drawdown": float(max_dd),
-            "total_return": float(total_ret),
-            "win_rate": float(win_rate),
-            "num_trades": int(num_trades),
-            "created_at": BacktestResult_instance.created_at
+            "id": result.id,
+            "ticker": result.ticker,
+            "strategy_name": strategy_name,
+            "parameters": run['params'],
+            **run['metrics'],
+            "code_version": result.code_version,
+            "created_at": result.created_at
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

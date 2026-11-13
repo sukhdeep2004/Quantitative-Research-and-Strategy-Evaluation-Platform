@@ -1,7 +1,10 @@
+import json
 from sqlalchemy import Column, Integer, Float, Date, String, DateTime
 from datetime import datetime
 
 from sqlalchemy.ext.declarative import declarative_base
+
+from quant.version import CODE_VERSION
 
 Base = declarative_base()
 
@@ -24,4 +27,19 @@ class BacktestResult(Base):
     total_return = Column(Float)
     win_rate = Column(Float)
     num_trades = Column(Integer)
+    parameters = Column(String(500))
+    code_version = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @classmethod
+    def from_run(cls, ticker, start_date, end_date, strategy_name, run):
+        """Build a row from one entry returned by quant.backtest.run_strategy"""
+        return cls(
+            ticker=ticker.upper(),
+            start_date=start_date,
+            end_date=end_date,
+            strategy_name=strategy_name,
+            parameters=json.dumps(run['params'], sort_keys=True),
+            code_version=CODE_VERSION,
+            **run['metrics'],
+        )
